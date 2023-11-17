@@ -1,5 +1,5 @@
 import Background from "../Background";
-import Pose from "../Pose";
+import { ThreadedPose, Pose } from "../Pose";
 // Importing the useState hook from React to manage component state
 import { useState, useEffect } from "react";
 import { MainBox, StartBox, IntermediateBox, EndBox } from "./PoseAuthoringBoxes";

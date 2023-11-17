@@ -1,4 +1,4 @@
-import { useCallback, useState, forwardRef } from "react";
+import { useCallback, useState, forwardRef, useEffect } from "react";
 import { Graphics, Container } from "@inlet/react-pixi";
 import { Graphics as PIXIGraphics } from "@pixi/graphics";
 import {
@@ -81,7 +81,7 @@ const connectFinger = (landmarks, g) => {
   g.endFill();
 };
 
-const calculateArmWidth = (poseData, width, height) => {
+export const calculateArmWidth = (poseData, width, height) => {
   const landmarks = (({ RIGHT_SHOULDER, SOLAR_PLEXIS }) => ({
     RIGHT_SHOULDER,
     SOLAR_PLEXIS,
@@ -93,7 +93,7 @@ const calculateArmWidth = (poseData, width, height) => {
   return magnitude(coords.RIGHT_SHOULDER, coords.SOLAR_PLEXIS) * 0.04;
 };
 
-const drawBiceps = (poseData, g, armWidth, width, height, similarityScores) => {
+export const drawBiceps = (poseData, g, armWidth, width, height, similarityScores) => {
   const generalCoords = objMap(
     LANDMARK_GROUPINGS.BICEP_LANDMARKS,
     landmarkToCoordinates(poseData.poseLandmarks, width, height)
@@ -138,7 +138,7 @@ const drawBiceps = (poseData, g, armWidth, width, height, similarityScores) => {
   );
 };
 
-const drawForearms = (
+export const drawForearms = (
   poseData,
   g,
   armWidth,
@@ -208,7 +208,7 @@ const drawForearms = (
   );
 };
 
-const drawFace = (poseData, g, width, height, similarityScores) => {
+export const drawFace = (poseData, g, width, height, similarityScores) => {
   let faceOvalCoords = FACEMESH_FACE_OVAL.map((indexPair) => {
     const coordinates = poseData.faceLandmarks[indexPair[0]];
     coordinates.x *= width;
@@ -240,7 +240,7 @@ const drawFace = (poseData, g, width, height, similarityScores) => {
 // RIGHT_SHOULDER and LEFT_SHOULDER landmarks
 // and the LEFT_KNEE and RIGHT_KNEE landmarks instead of the
 // LEFT_ELBOW and RIGHT_ELBOW landmarks
-const drawThighs = (poseData, g, armWidth, width, height, similarityScores) => {
+export const drawThighs = (poseData, g, armWidth, width, height, similarityScores) => {
   const generalCoords = objMap(
     LANDMARK_GROUPINGS.THIGH_LANDMARKS,
     landmarkToCoordinates(poseData.poseLandmarks, width, height)
@@ -302,7 +302,7 @@ const drawThighs = (poseData, g, armWidth, width, height, similarityScores) => {
   }
 };
 
-const drawTorso = (poseData, g, width, height, similarityScores) => {
+export const drawTorso = (poseData, g, width, height, similarityScores) => {
   let torsoCoords = objMap(
     LANDMARK_GROUPINGS.TORSO_LANDMARKS,
     landmarkToCoordinates(poseData.poseLandmarks, width, height)
@@ -316,7 +316,7 @@ const drawTorso = (poseData, g, width, height, similarityScores) => {
   );
 };
 
-const drawShins = (poseData, g, armWidth, width, height, similarityScores) => {
+export const drawShins = (poseData, g, armWidth, width, height, similarityScores) => {
   const generalCoords = objMap(
     LANDMARK_GROUPINGS.SHIN_LANDMARKS,
     landmarkToCoordinates(poseData.poseLandmarks, width, height)
@@ -352,7 +352,7 @@ const drawShins = (poseData, g, armWidth, width, height, similarityScores) => {
   }
 };
 
-const drawAbdomen = (poseData, g, width, height) => {
+export const drawAbdomen = (poseData, g, width, height) => {
   let abdomenCoords = objMap(
     LANDMARK_GROUPINGS.ABDOMEN_LANDMARKS,
     landmarkToCoordinates(poseData.poseLandmarks, width, height)
@@ -363,7 +363,7 @@ const drawAbdomen = (poseData, g, width, height) => {
   g.endFill();
 };
 
-const drawHands = (poseData, g, width, height, similarityScores) => {
+export const drawHands = (poseData, g, width, height, similarityScores) => {
   const fingerLandmarks = [
     LANDMARK_GROUPINGS.THUMB_LANDMARKS,
     LANDMARK_GROUPINGS.INDEX_FINGER_LANDMARKS,
@@ -476,6 +476,62 @@ const Pose = forwardRef((props, ref) => {
 });
 
 export default Pose;
+
+export const ThreadedPose = forwardRef((props, ref) => {
+  const [armWidth, setArmWidth] = useState(0);
+  const { colAttr, similarityScores, modelBodySegments } = props;
+  const { width, height } = colAttr;
+  const [worker, setWorker] = useState(null);
+
+  useEffect(() => {
+    if (window.Worker) {
+      // Create a new Web Worker
+      const newWorker = new Worker(new URL('./drawWorker.js', import.meta.url), {type: 'module'});
+      setWorker(newWorker);
+
+      return () => {
+        // Terminate the Web Worker when the component unmounts
+        newWorker.terminate();
+      };
+    }
+  }, []);
+
+  const draw = useCallback(
+    (g) => {
+      if (!worker) {
+        // Web Worker not supported, fall back to regular draw
+        g.clear();
+        return;
+      }
+
+      // Send data to the Web Worker for processing
+      worker.postMessage({
+        poseData: props.poseData,
+        width,
+        height,
+        similarityScores,
+        armWidth,
+      });
+
+      // Handle messages from the Web Worker
+      worker.onmessage = function (event) {
+        console.log(event.data); // 'Drawing complete'
+      };
+    },
+    [worker, props.poseData, width, height, similarityScores]
+  );
+
+  return (
+    <Container
+      position={[colAttr.x, colAttr.y]}
+      scale={0.8}
+      ref={ref}
+      poseData={props.poseData}
+    >
+      <Graphics draw={draw} />
+    </Container>
+  );
+});
 
 const PoseGraphic = (poseData, colAttr) => {
   const { width, height } = colAttr;
